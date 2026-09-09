@@ -43,7 +43,7 @@ def setup_wifi(ssid_name: str, ssid_pass: str):
 
 def get_mode(request: Request):
     return JSONResponse(request, {"mode": MODE})
-    
+
 def set_mode(request: Request):
     global MODE
     resp_json = request.json()
@@ -107,10 +107,10 @@ colors.append(fancy.CHSV(0, 0, 0).pack())
 for i in range(NUM_COLORS-1):
     color = fancy.CHSV(i*step)  # 0 to 1.0
     colors.append(color.pack())
-    
+
 for i in range(0, NUM_COLORS):
     palette[i] = colors[i]
-    
+
 def set_manual(request: Request):
     global bitmap
     resp_json = request.json()
@@ -127,7 +127,7 @@ def set_manual(request: Request):
             return JSONResponse(request, status=Status(400, f"expected {i} pixel pixel to be 0 or greater / {NUM_COLORS-1} or less"), data={})
         row_idx = i // unit_height
         col_idx = i % unit_width
-        bitmap[row_idx, col_idx] = pixels[i]
+        bitmap[col_idx, row_idx] = pixels[i]
     return JSONResponse(request, data={})
 
 cur_idx = 0
@@ -154,22 +154,22 @@ except OSError:
 
 
 while True:
-    
+
     if MODE == 0:
         for i in range(unit_width):
             for j in range(unit_height):
                 color_idx = (i + cur_idx) % (NUM_COLORS - 1)
                 bitmap[j, i] = color_idx + 1
-        
+
         if cur_idx < (NUM_COLORS - 1):
-            cur_idx += 1 
+            cur_idx += 1
         else:
             cur_idx = 0
         time.sleep(cycle_time/NUM_COLORS)
     elif MODE == 1:
         pass
     DISPLAY.refresh()
-    
+
     try:
         server.poll()
     except ValueError as e: # for unparseable requests
