@@ -42,12 +42,10 @@ def setup_wifi(ssid_name: str, ssid_pass: str):
     return server, pool
 
 def get_mode(request: Request):
-    print(request.json())
     return JSONResponse(request, {"mode": MODE})
     
 def set_mode(request: Request):
     global MODE
-    print(request.json())
     resp_json = request.json()
     if "mode" not in resp_json.keys():
         return JSONResponse(request, status=Status(400, "no mode key"), data={})
@@ -123,6 +121,10 @@ def set_manual(request: Request):
     if len(pixels) != expected_len:
         return JSONResponse(request, status=Status(400, f"expected {expected_len} pixels"), data={})
     for i in range(expected_len):
+        if type(pixels[i]) != int:
+            return JSONResponse(request, status=Status(400, f"expected {i} pixel to be int"), data={})
+        if pixels[i] > NUM_COLORS - 1 or pixels[i] < 0:
+            return JSONResponse(request, status=Status(400, f"expected {i} pixel pixel to be 0 or greater / {NUM_COLORS-1} or less"), data={})
         row_idx = i // unit_height
         col_idx = i % unit_width
         bitmap[row_idx, col_idx] = pixels[i]
@@ -172,9 +174,3 @@ while True:
         server.poll()
     except ValueError as e: # for unparseable requests
         print("caught value error in server.poll")
-    
-    
-    
-    
-
-
