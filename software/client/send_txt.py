@@ -6,7 +6,7 @@ img = Image.new('L', (64, 64), color=0)
 img_w, img_h = img.size
 # use the font we have in the repository to draw on the image
 font = ImageFont.truetype('Satoshi-Variable.ttf', 25)
-mask = font.getmask('love', mode='1') # "1" for 1 bit, "L" for 8 bit
+mask = font.getmask('love', mode='8') # "1" for 1 bit, "L" for 8 bit
 mask_w, mask_h = mask.size
 d = Image.core.draw(img.im, 0)
 d.draw_bitmap(((img_w - mask_w)/2, (img_h - mask_h)/2), mask, 155)
