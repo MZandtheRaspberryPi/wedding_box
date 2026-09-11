@@ -14,8 +14,8 @@ MANUAL_MODE_LOOP_TIME = 1 / 100
 WLAN_SSID = "light_box"
 WLAN_PASS = "light_box"
 
-HTTP_MODE_ROUTE = "mode"
-HTTP_MANUAL_ROUTE = "manual"
+HTTP_MODE_ROUTE = "/mode"
+HTTP_MANUAL_ROUTE = "/manual"
 HTTP_JSON_MODE_KEY = "mode"
-HTTP_PIXEL_KEY = "pixel"
+HTTP_PIXEL_KEY = "pixels"
 HTTP_PORT = 5000

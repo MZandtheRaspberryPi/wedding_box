@@ -28,7 +28,10 @@ import rgbmatrix
 import time
 import wifi
 
-from constants import MODE_GRADIENT_SCROLL, MODE_MANUAL, MODES, BIT_DEPTH_VALUE, UNIT_WIDTH, UNIT_HEIGHT, NUM_COLORS, GRADIENT_CYCLE_TIME, WLAN_SSID, WLAN_PASS, HTTP_MODE_ROUTE, HTTP_MODE_ROUTE, HTTP_JSON_MODE_KEY, HTTP_PIXEL_KEY, N_PIXELS, HTTP_PORT, MANUAL_MODE_LOOP_TIME
+from constants import (MODE_GRADIENT_SCROLL, MODE_MANUAL, MODES, BIT_DEPTH_VALUE, UNIT_WIDTH,
+                       UNIT_HEIGHT, NUM_COLORS, GRADIENT_CYCLE_TIME, WLAN_SSID, WLAN_PASS,
+                       HTTP_MODE_ROUTE, HTTP_MODE_ROUTE, HTTP_JSON_MODE_KEY, HTTP_PIXEL_KEY,
+                       N_PIXELS, HTTP_PORT, MANUAL_MODE_LOOP_TIME, HTTP_MANUAL_ROUTE)
 from util import setup_wifi
 
 
@@ -37,9 +40,9 @@ class DisplayBox:
         self.cur_mode = MODE_GRADIENT_SCROLL
         displayio.release_displays()
         self.matrix = rgbmatrix.RGBMatrix(
-                width = unit_width,
-                height = unit_height,
-                bit_depth = bit_depth_value,
+                width = UNIT_WIDTH,
+                height = UNIT_HEIGHT,
+                bit_depth = BIT_DEPTH_VALUE,
                 # (R1,G1,B1,R2,G2,B2...)
                 rgb_pins = [board.GP0, board.GP1, board.GP2, board.GP3, board.GP4, board.GP5],
                 # (A,B,C,D...)
@@ -51,15 +54,15 @@ class DisplayBox:
                 serpentine = True,
                 doublebuffer = True,
             )
-        self.display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+        self.display = framebufferio.FramebufferDisplay(self.matrix, auto_refresh=False)
         self.bitmap = displayio.Bitmap(UNIT_WIDTH, UNIT_HEIGHT, NUM_COLORS)
         self.palette = displayio.Palette(NUM_COLORS)
-        self.tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
+        self.tile_grid = displayio.TileGrid(self.bitmap, pixel_shader=self.palette)
 
         # Create a Group and add the TileGrid to it
         self.group = displayio.Group()
-        self.group.append(tile_grid)
-        self.display.root_group = group
+        self.group.append(self.tile_grid)
+        self.display.root_group = self.group
 
         # creating our colors in HSV space and assigning to the color pallette
         # self.colors will hold packed colors RRGGBB or something like that
@@ -69,10 +72,10 @@ class DisplayBox:
         # add black
         self.colors.append(fancy.CHSV(0, 0, 0).pack())
         for i in range(NUM_COLORS-1):
-            color = fancy.CHSV(i*step)  # 0 to 1.0
+            color = fancy.CHSV(i*self.step)  # 0 to 1.0
             self.colors.append(color.pack())
         for i in range(0, NUM_COLORS):
-            palette[i] = colors[i]
+            self.palette[i] = self.colors[i]
 
         # counter for gradient scrolling to go through colors
         self.cur_idx = 0
@@ -88,7 +91,7 @@ class DisplayBox:
         # startup the server
         try:
             self.server.start(str(wifi.radio.ipv4_gateway_ap), port=HTTP_PORT)
-            print(f"Listening on http://{wifi.radio.ipv4_gateway_ap}:{server.port}")
+            print(f"Listening on http://{wifi.radio.ipv4_gateway_ap}:{self.server.port}")
             #  if the server fails to begin, restart the pico w
         except OSError:
             time.sleep(5)
@@ -110,25 +113,32 @@ class DisplayBox:
         return JSONResponse(request, data={HTTP_JSON_MODE_KEY: self.cur_mode})
 
     def set_manual(self, request: Request):
+        print("setting manual")
         resp_json = request.json()
 
         if self.cur_mode != MODE_MANUAL:
+            print("not manual mode")
             return JSONResponse(request, status=Status(400, f"not in manual mode {MODE_MANUAL}, cur mode is: {self.cur_mode}"), data={})
 
         if HTTP_PIXEL_KEY not in resp_json.keys():
+            print("no pixels")
             return JSONResponse(request, status=Status(400, f"no pixels key: {HTTP_PIXEL_KEY}"), data={})
         pixels = resp_json[HTTP_PIXEL_KEY]
         if len(pixels) != N_PIXELS:
+            print("expected more pixels")
             return JSONResponse(request, status=Status(400, f"expected {N_PIXELS} pixels"), data={})
         for i in range(N_PIXELS):
             if type(pixels[i]) != int:
+                print("expect ints")
                 return JSONResponse(request, status=Status(400, f"expected {i} pixel to be int"), data={})
             if pixels[i] > NUM_COLORS - 1 or pixels[i] < 0:
+                print("pixel greater")
                 return JSONResponse(request, status=Status(400, f"expected {i} pixel pixel to be 0 or greater / {NUM_COLORS-1} or less"), data={})
             row_idx = i // UNIT_HEIGHT
             col_idx = i % UNIT_WIDTH
             self.bitmap[col_idx, row_idx] = pixels[i]
         self.refresh_display()
+        print("set manual")
         return JSONResponse(request, data={})
 
     def refresh_display(self):
@@ -148,7 +158,7 @@ class DisplayBox:
         self.refresh_display()
         # control the time we spin for
         time.sleep(GRADIENT_CYCLE_TIME/NUM_COLORS)
-    
+
     def handle_manual_loop(self):
         time.sleep(MANUAL_MODE_LOOP_TIME)
 

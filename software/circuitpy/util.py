@@ -1,6 +1,7 @@
 
-import socketpool
 from adafruit_httpserver import Server
+import ipaddress
+import socketpool
 import wifi
 
 def setup_wifi(ssid_name: str, ssid_pass: str):
