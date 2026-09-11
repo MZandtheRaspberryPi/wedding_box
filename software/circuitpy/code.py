@@ -16,7 +16,7 @@ curl --header "Content-Type: application/json" \
   --data "{\"pixels\":[${json_array}]}" \
   http://10.42.0.1:5000/manual
 """
-
+import adafruit_display_text.label
 import adafruit_fancyled.adafruit_fancyled as fancy
 from adafruit_httpserver import Server, Request, Response, POST, GET, Status, JSONResponse, Route
 import board
@@ -25,13 +25,16 @@ import framebufferio
 import microcontroller
 import os
 import rgbmatrix
+import terminalio
 import time
 import wifi
 
 from constants import (MODE_GRADIENT_SCROLL, MODE_MANUAL, MODES, BIT_DEPTH_VALUE, UNIT_WIDTH,
-                       UNIT_HEIGHT, NUM_COLORS, GRADIENT_CYCLE_TIME, WLAN_SSID, WLAN_PASS,
+                       UNIT_HEIGHT, NUM_COLORS, GRADIENT_CYCLE_TIME, WLAN_DEFAULT_SSID, WLAN_DEFAULT_PASS,
                        HTTP_MODE_ROUTE, HTTP_MODE_ROUTE, HTTP_JSON_MODE_KEY, HTTP_PIXEL_KEY,
-                       N_PIXELS, HTTP_PORT, MANUAL_MODE_LOOP_TIME, HTTP_MANUAL_ROUTE)
+                       N_PIXELS, HTTP_PORT, MANUAL_MODE_LOOP_TIME, HTTP_MANUAL_ROUTE, HTTP_ROUTE_WLAN,
+                       HTTP_SSID_KEY, HTTP_PASS_KEY
+                       )
 from util import setup_wifi
 
 
@@ -59,45 +62,97 @@ class DisplayBox:
         self.palette = displayio.Palette(NUM_COLORS)
         self.tile_grid = displayio.TileGrid(self.bitmap, pixel_shader=self.palette)
 
-        # Create a Group and add the TileGrid to it
-        self.group = displayio.Group()
-        self.group.append(self.tile_grid)
-        self.display.root_group = self.group
-
         # creating our colors in HSV space and assigning to the color pallette
         # self.colors will hold packed colors RRGGBB or something like that
         self.colors = []
         # we step from 0.0 to 1.0 so that we have NUM_COLORS - 1 colors (black is reserved, hence the -1)
         self.step = 1/(NUM_COLORS - 1)
         # add black
-        self.colors.append(fancy.CHSV(0, 0, 0).pack())
+        self.colors.append(fancy.CHSV(0, 0, 0))
         for i in range(NUM_COLORS-1):
             color = fancy.CHSV(i*self.step)  # 0 to 1.0
-            self.colors.append(color.pack())
+            self.colors.append(color)
+
         for i in range(0, NUM_COLORS):
-            self.palette[i] = self.colors[i]
+            self.palette[i] = self.colors[i].pack()
 
         # counter for gradient scrolling to go through colors
         self.cur_idx = 0
 
-        self.server, self.pool = setup_wifi(WLAN_SSID, WLAN_PASS)
+        self.server, self.pool, self.is_ap = setup_wifi(os.getenv('CIRCUITPY_WIFI_SSID'),
+                                            os.getenv('CIRCUITPY_WIFI_PASSWORD'),
+                                            WLAN_DEFAULT_SSID, WLAN_DEFAULT_PASS )
         self.server.add_routes([
             Route(HTTP_MODE_ROUTE, [POST], self.set_mode),
             Route(HTTP_MANUAL_ROUTE, [POST], self.set_manual),
-            Route(HTTP_MODE_ROUTE, [GET], self.get_mode)
+            Route(HTTP_MODE_ROUTE, [GET], self.get_mode),
+            Route(HTTP_ROUTE_WLAN, [POST], self.set_wlan_details)
         ])
 
         print("starting server..")
+        self.ip_addr_for_server = wifi.radio.ipv4_address if not self.is_ap else wifi.radio.ipv4_gateway_ap
         # startup the server
         try:
-            self.server.start(str(wifi.radio.ipv4_gateway_ap), port=HTTP_PORT)
-            print(f"Listening on http://{wifi.radio.ipv4_gateway_ap}:{self.server.port}")
+            self.server.start(str(self.ip_addr_for_server), port=HTTP_PORT)
+            print(f"Listening on http://{self.ip_addr_for_server}:{self.server.port}")
             #  if the server fails to begin, restart the pico w
         except OSError:
             time.sleep(5)
             print("restarting..")
             microcontroller.reset()
 
+        # show ip address
+        ip_addr = str(self.ip_addr_for_server)
+        ip_addr_list = ip_addr.split(".")
+        ip_addr_l1 = ".".join(ip_addr_list[:2])+"."
+        ip_addr_l2 = ".".join(ip_addr_list[2:])
+
+        listen_str = f"{ip_addr_l1}\n{ip_addr_l2}\n{self.server.port}"
+        line1 = adafruit_display_text.label.Label(
+            terminalio.FONT,
+            color=0xff0000,
+            text=listen_str)
+        line1.x = 0
+        line1.y = 8
+
+        # Put each line of text into a Group, then show that group.
+        g = displayio.Group()
+        g.append(line1)
+        self.display.root_group = g
+
+        self.refresh_display()
+
+        time.sleep(8.0)
+
+        # Create a Group and add the TileGrid to it
+        self.group = displayio.Group()
+        self.group.append(self.tile_grid)
+        self.display.root_group = self.group
+
+        print("colors:")
+        for i in range(NUM_COLORS):
+            color = self.colors[i]
+            rgb = fancy.CRGB(color)
+            print(f"{i}: HSV: ({color.hue}, {color.saturation}, {color.value}) RGB: ({rgb.red}, {rgb.green}, {rgb.blue})")
+
+    def set_wlan_details(self, request: Request):
+        req_json = request.json()
+        for k in [HTTP_SSID_KEY, HTTP_PASS_KEY]:
+            if k not in req_json.keys():
+                return JSONResponse(request, status=Status(400, f"no key: {k}"), data={})
+        wlan_ssid = req_json[HTTP_SSID_KEY]
+        wlan_pass = req_json[HTTP_PASS_KEY]
+        for v in [wlan_ssid, wlan_pass]:
+            if type(v) != str:
+                return JSONResponse(request, status=Status(400, f"expected {v} to be str"), data={})
+        if len(wlan_pass) < 8 or len(wlan_pass) > 64:
+            return JSONResponse(request, status=Status(400, f"expected password to be between 8 and 64 characters"), data={})
+        # write to disk
+        contents = f'''CIRCUITPY_WIFI_SSID = "{wlan_ssid}"
+CIRCUITPY_WIFI_PASSWORD = "{wlan_pass}"'''
+        with open("settings.toml", "w") as file_handle:
+            file_handle.write(contents)
+        return JSONResponse(request, data={})
 
     def get_mode(self, request: Request):
         return JSONResponse(request, {HTTP_JSON_MODE_KEY: self.cur_mode})

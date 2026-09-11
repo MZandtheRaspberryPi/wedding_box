@@ -1,0 +1,2 @@
+CIRCUITPY_WIFI_SSID = "fakewlan_ssid"
+CIRCUITPY_WIFI_PASSWORD = "fakefake"
